@@ -1,1 +1,6 @@
-<Solution />
+<Solution>
+  <Project Path="Catalog/Catalog.csproj" />
+  <Project Path="Inventory/Inventory.csproj" />
+  <Project Path="Notifications/Notifications.csproj" />
+  <Project Path="Ordering/Ordering.csproj" />
+</Solution>

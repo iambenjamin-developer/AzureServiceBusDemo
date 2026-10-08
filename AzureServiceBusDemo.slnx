@@ -1,1 +1,10 @@
-<Solution />
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Catalog.Api/Catalog.Api.csproj" Id="e163c7bc-abb2-4f70-90f9-531c4f7b0556" />
+    <Project Path="src/Inventory.Worker/Inventory.Worker.csproj" Id="1e74ce02-7236-4337-bc01-2a63b54af925" />
+    <Project Path="src/Notifications.Worker/Notifications.Worker.csproj" Id="09e48262-0c25-49de-afeb-2a056e406c00" />
+    <Project Path="src/Ordering.Api/Ordering.Api.csproj" Id="ac5c960a-aff2-45fe-a41b-013920d00140" />
+    <Project Path="src/Shared.Contracts/Shared.Contracts.csproj" Id="f4b80af2-1f58-4828-8a5f-1ae4d1b5ac67" />
+    <Project Path="src/Shared.Messaging/Shared.Messaging.csproj" Id="c1954a50-2787-49f5-b8e1-6844b60cf62a" />
+  </Folder>
+</Solution>

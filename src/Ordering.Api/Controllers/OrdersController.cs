@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Ordering.Api.Data;
 using Ordering.Api.Models;
 using Shared.Contracts;
 using Shared.Contracts.Events;
@@ -10,12 +12,12 @@ namespace Ordering.Api.Controllers
     [ApiController]
     public class OrdersController : ControllerBase
     {
-        private readonly OrderStore _store;
+        private readonly OrderingDbContext _db;
         private readonly IEventPublisher _publisher;
 
-        public OrdersController(OrderStore store, IEventPublisher publisher)
+        public OrdersController(OrderingDbContext db, IEventPublisher publisher)
         {
-            _store = store;
+            _db = db;
             _publisher = publisher;
         }
 
@@ -29,11 +31,17 @@ namespace Ordering.Api.Controllers
                 Id = Guid.NewGuid(),
                 CustomerEmail = request.CustomerEmail,
                 Items = request.Items
+                    .Select(i => new OrderLine { ProductId = i.ProductId, Quantity = i.Quantity })
+                    .ToList()
             };
-            _store.Add(order);
 
+            // 1. Guardar el pedido en la base de datos (estado Pending).
+            _db.Orders.Add(order);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            // 2. Publicar el evento para que Inventory reserve el stock.
             await _publisher.PublishAsync(Topics.OrderEvents, Subjects.OrderPlaced,
-                new OrderPlaced(order.Id, order.CustomerEmail, order.Items), cancellationToken);
+                new OrderPlaced(order.Id, order.CustomerEmail, request.Items), cancellationToken);
 
             // 202 Accepted: el pedido se procesa de forma asíncrona.
             // El cliente consulta el estado en la URL del header Location.
@@ -44,9 +52,13 @@ namespace Ordering.Api.Controllers
         [HttpGet("{id:guid}")]
         [ProducesResponseType(typeof(Order), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public IActionResult GetById(Guid id)
+        public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
-            var order = _store.Get(id);
+            var order = await _db.Orders
+                .AsNoTracking()
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
             return order is null ? NotFound() : Ok(order);
         }
     }

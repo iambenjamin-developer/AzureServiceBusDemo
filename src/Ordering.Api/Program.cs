@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
+using Ordering.Api.Data;
 using Ordering.Api.Messaging;
-using Ordering.Api.Models;
 using Shared.Messaging;
 
 namespace Ordering.Api
@@ -21,7 +22,18 @@ namespace Ordering.Api
 
             // Service Bus: cliente + publisher (Shared.Messaging)
             builder.Services.AddServiceBus(builder.Configuration);
-            builder.Services.AddSingleton<OrderStore>();
+
+            // Azure SQL: la cadena se lee de "ConnectionStrings:OrderingDb" (user secrets en local).
+            var orderingDb = builder.Configuration.GetConnectionString("OrderingDb");
+            if (string.IsNullOrWhiteSpace(orderingDb))
+            {
+                throw new InvalidOperationException(
+                    "Falta 'ConnectionStrings:OrderingDb'. Configúrala con: dotnet user-secrets set \"ConnectionStrings:OrderingDb\" \"<cadena>\"");
+            }
+            // EnableRetryOnFailure reintenta errores transitorios de Azure SQL (p. ej. base serverless que se está "despertando").
+            builder.Services.AddDbContext<OrderingDbContext>(options =>
+                options.UseSqlServer(orderingDb, sql => sql.EnableRetryOnFailure()));
+
             // Consumer de "inventory-events" corriendo en segundo plano dentro de la misma API
             builder.Services.AddHostedService<InventoryEventsConsumer>();
 

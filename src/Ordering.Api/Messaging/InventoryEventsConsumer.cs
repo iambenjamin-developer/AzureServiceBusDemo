@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using Ordering.Api.Data;
 using Ordering.Api.Models;
 using Shared.Contracts;
 using Shared.Contracts.Events;
@@ -15,14 +16,16 @@ namespace Ordering.Api.Messaging
     {
         private readonly ServiceBusClient _client;
         private readonly IEventPublisher _publisher;
-        private readonly OrderStore _store;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<InventoryEventsConsumer> _logger;
 
-        public InventoryEventsConsumer(ServiceBusClient client, IEventPublisher publisher, OrderStore store, ILogger<InventoryEventsConsumer> logger)
+        // Un BackgroundService es singleton y el DbContext es scoped: no se puede inyectar directo.
+        // Por eso se recibe IServiceScopeFactory y se crea un scope (y un DbContext nuevo) por cada mensaje.
+        public InventoryEventsConsumer(ServiceBusClient client, IEventPublisher publisher, IServiceScopeFactory scopeFactory, ILogger<InventoryEventsConsumer> logger)
         {
             _client = client;
             _publisher = publisher;
-            _store = store;
+            _scopeFactory = scopeFactory;
             _logger = logger;
         }
 
@@ -58,11 +61,14 @@ namespace Ordering.Api.Messaging
             _logger.LogInformation("Recibido {Subject} (MessageId {MessageId}, intento {DeliveryCount})",
                 message.Subject, message.MessageId, message.DeliveryCount);
 
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
             switch (message.Subject)
             {
                 case Subjects.StockReserved:
                     var reserved = message.Body.ToObjectFromJson<StockReserved>()!;
-                    var confirmedOrder = _store.Get(reserved.OrderId);
+                    var confirmedOrder = await db.Orders.FindAsync(new object[] { reserved.OrderId }, args.CancellationToken);
                     if (confirmedOrder is null)
                     {
                         await DeadLetterOrderNotFoundAsync(args, reserved.OrderId);
@@ -70,6 +76,8 @@ namespace Ordering.Api.Messaging
                     }
 
                     confirmedOrder.Status = OrderStatus.Confirmed;
+                    await db.SaveChangesAsync(args.CancellationToken);
+
                     await _publisher.PublishAsync(Topics.OrderEvents, Subjects.OrderConfirmed,
                         new OrderConfirmed(confirmedOrder.Id, confirmedOrder.CustomerEmail), args.CancellationToken);
                     _logger.LogInformation("Pedido {OrderId} confirmado", confirmedOrder.Id);
@@ -77,7 +85,7 @@ namespace Ordering.Api.Messaging
 
                 case Subjects.StockRejected:
                     var stockRejected = message.Body.ToObjectFromJson<StockRejected>()!;
-                    var rejectedOrder = _store.Get(stockRejected.OrderId);
+                    var rejectedOrder = await db.Orders.FindAsync(new object[] { stockRejected.OrderId }, args.CancellationToken);
                     if (rejectedOrder is null)
                     {
                         await DeadLetterOrderNotFoundAsync(args, stockRejected.OrderId);
@@ -86,6 +94,8 @@ namespace Ordering.Api.Messaging
 
                     rejectedOrder.Status = OrderStatus.Rejected;
                     rejectedOrder.RejectionReason = stockRejected.Reason;
+                    await db.SaveChangesAsync(args.CancellationToken);
+
                     await _publisher.PublishAsync(Topics.OrderEvents, Subjects.OrderRejected,
                         new OrderRejected(rejectedOrder.Id, rejectedOrder.CustomerEmail, stockRejected.Reason), args.CancellationToken);
                     _logger.LogWarning("Pedido {OrderId} rechazado: {Reason}", rejectedOrder.Id, stockRejected.Reason);
@@ -99,8 +109,8 @@ namespace Ordering.Api.Messaging
             await args.CompleteMessageAsync(message, args.CancellationToken);
         }
 
-        // Si la API se reinició, el pedido ya no está en memoria: reintentar no lo arreglaría,
-        // así que se manda a la dead-letter queue para poder inspeccionarlo.
+        // Si el pedido no existe en la base de datos, reintentar no lo arreglaría:
+        // se manda a la dead-letter queue para poder inspeccionarlo.
         private Task DeadLetterOrderNotFoundAsync(ProcessMessageEventArgs args, Guid orderId)
         {
             _logger.LogWarning("Pedido {OrderId} no encontrado, mensaje a dead-letter", orderId);

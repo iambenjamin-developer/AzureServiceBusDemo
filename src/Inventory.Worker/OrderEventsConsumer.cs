@@ -13,14 +13,16 @@ namespace Inventory.Worker
     {
         private readonly ServiceBusClient _client;
         private readonly IEventPublisher _publisher;
-        private readonly InMemoryStock _stock;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<OrderEventsConsumer> _logger;
 
-        public OrderEventsConsumer(ServiceBusClient client, IEventPublisher publisher, InMemoryStock stock, ILogger<OrderEventsConsumer> logger)
+        // Un BackgroundService es singleton y StockService/DbContext son scoped: no se pueden inyectar directo.
+        // Por eso se recibe IServiceScopeFactory y se crea un scope (y un DbContext nuevo) por cada mensaje.
+        public OrderEventsConsumer(ServiceBusClient client, IEventPublisher publisher, IServiceScopeFactory scopeFactory, ILogger<OrderEventsConsumer> logger)
         {
             _client = client;
             _publisher = publisher;
-            _stock = stock;
+            _scopeFactory = scopeFactory;
             _logger = logger;
         }
 
@@ -30,7 +32,7 @@ namespace Inventory.Worker
             {
                 // Completamos a mano para que se vea cuándo el mensaje se da por procesado.
                 AutoCompleteMessages = false,
-                // 1 mensaje a la vez: así InMemoryStock no necesita locks.
+                // 1 mensaje a la vez: dos pedidos no compiten por el mismo stock dentro de este worker.
                 MaxConcurrentCalls = 1
             });
 
@@ -68,7 +70,11 @@ namespace Inventory.Worker
 
             var order = message.Body.ToObjectFromJson<OrderPlaced>()!;
 
-            if (_stock.TryReserve(order.Items, out var reason))
+            using var scope = _scopeFactory.CreateScope();
+            var stock = scope.ServiceProvider.GetRequiredService<StockService>();
+
+            var reason = await stock.TryReserveAsync(order.Items, args.CancellationToken);
+            if (reason is null)
             {
                 await _publisher.PublishAsync(Topics.InventoryEvents, Subjects.StockReserved,
                     new StockReserved(order.OrderId), args.CancellationToken);

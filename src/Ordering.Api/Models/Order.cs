@@ -1,5 +1,3 @@
-using Shared.Contracts.Events;
-
 namespace Ordering.Api.Models
 {
     public enum OrderStatus
@@ -11,10 +9,18 @@ namespace Ordering.Api.Models
 
     public class Order
     {
-        public Guid Id { get; init; }
-        public string CustomerEmail { get; init; } = string.Empty;
-        public List<OrderItem> Items { get; init; } = new();
+        public Guid Id { get; set; }
+        public string CustomerEmail { get; set; } = string.Empty;
+        public List<OrderLine> Items { get; set; } = new();
         public OrderStatus Status { get; set; } = OrderStatus.Pending;
         public string? RejectionReason { get; set; }
+    }
+
+    public class OrderLine
+    {
+        public int Id { get; set; }
+        public Guid OrderId { get; set; }
+        public int ProductId { get; set; }
+        public int Quantity { get; set; }
     }
 }

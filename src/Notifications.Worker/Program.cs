@@ -1,3 +1,5 @@
+using Shared.Messaging;
+
 namespace Notifications.Worker
 {
     public class Program
@@ -5,7 +7,9 @@ namespace Notifications.Worker
         public static void Main(string[] args)
         {
             var builder = Host.CreateApplicationBuilder(args);
-            builder.Services.AddHostedService<Worker>();
+
+            builder.Services.AddServiceBus(builder.Configuration);
+            builder.Services.AddHostedService<OrderEventsConsumer>();
 
             var host = builder.Build();
             host.Run();

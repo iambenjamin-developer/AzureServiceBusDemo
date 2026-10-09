@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+namespace Shared.Messaging;
 
-namespace Shared.Messaging
+public interface IEventPublisher
 {
-    internal class IEventPublisher
-    {
-    }
+    /// <summary>
+    /// Publica un evento en un topic. El "subject" es lo que usan los filtros
+    /// de las subscriptions para decidir quién recibe el mensaje.
+    /// </summary>
+    Task PublishAsync<T>(string topic, string subject, T @event, CancellationToken cancellationToken = default);
 }

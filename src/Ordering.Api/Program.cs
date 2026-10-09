@@ -1,3 +1,7 @@
+using System.Text.Json.Serialization;
+using Ordering.Api.Messaging;
+using Ordering.Api.Models;
+using Shared.Messaging;
 
 namespace Ordering.Api
 {
@@ -9,10 +13,17 @@ namespace Ordering.Api
 
             // Add services to the container.
 
-            builder.Services.AddControllers();
+            builder.Services.AddControllers()
+                .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+
+            // Service Bus: cliente + publisher (Shared.Messaging)
+            builder.Services.AddServiceBus(builder.Configuration);
+            builder.Services.AddSingleton<OrderStore>();
+            // Consumer de "inventory-events" corriendo en segundo plano dentro de la misma API
+            builder.Services.AddHostedService<InventoryEventsConsumer>();
 
             var app = builder.Build();
 

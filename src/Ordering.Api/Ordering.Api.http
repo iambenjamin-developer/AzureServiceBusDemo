@@ -1,6 +1,31 @@
 @Ordering.Api_HostAddress = http://localhost:5180
 
-GET {{Ordering.Api_HostAddress}}/weatherforecast/
+### Pedido con stock suficiente -> OrderConfirmed
+# @name placeOk
+POST {{Ordering.Api_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "customerEmail": "cliente@demo.com",
+  "items": [
+    { "productId": 1, "quantity": 2 },
+    { "productId": 2, "quantity": 1 }
+  ]
+}
+
+### Consultar estado (repetir tras unos segundos: Pending -> Confirmed)
+GET {{Ordering.Api_HostAddress}}/api/orders/{{placeOk.response.body.id}}
 Accept: application/json
+
+### Pedido sin stock (el producto 3 tiene 0) -> OrderRejected
+POST {{Ordering.Api_HostAddress}}/api/orders
+Content-Type: application/json
+
+{
+  "customerEmail": "cliente@demo.com",
+  "items": [
+    { "productId": 3, "quantity": 1 }
+  ]
+}
 
 ###

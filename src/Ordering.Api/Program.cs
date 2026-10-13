@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Ordering.Api.Data;
+using OpenTelemetry.Trace;
 using Ordering.Api.Messaging;
 using Shared.Messaging;
+using Shared.Observability;
 
 namespace Ordering.Api
 {
@@ -19,6 +21,9 @@ namespace Ordering.Api
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+
+            // OpenTelemetry → Datadog Agent: trazas, métricas y logs (Shared.Observability)
+            builder.AddObservability("ordering-api", tracing => tracing.AddAspNetCoreInstrumentation());
 
             // Service Bus: cliente + publisher (Shared.Messaging)
             builder.Services.AddServiceBus(builder.Configuration);

@@ -6,5 +6,6 @@
     <Project Path="src/Ordering.Api/Ordering.Api.csproj" Id="ac5c960a-aff2-45fe-a41b-013920d00140" />
     <Project Path="src/Shared.Contracts/Shared.Contracts.csproj" Id="f4b80af2-1f58-4828-8a5f-1ae4d1b5ac67" />
     <Project Path="src/Shared.Messaging/Shared.Messaging.csproj" Id="c1954a50-2787-49f5-b8e1-6844b60cf62a" />
+    <Project Path="src/Shared.Observability/Shared.Observability.csproj" />
   </Folder>
 </Solution>

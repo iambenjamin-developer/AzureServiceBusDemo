@@ -46,6 +46,10 @@ services:
   datadog-agent:
     image: registry.datadoghq.com/agent:7
     container_name: dd-agent
+    # Comparte el espacio de procesos del host (en Docker Desktop, la VM de Linux). Sin esto el receptor
+    # OTLP no arranca: "failed to register process metrics: process does not exist", porque el PID del
+    # Agent dentro del contenedor no existe en el /host/proc montado abajo.
+    pid: host
     environment:
       DD_API_KEY: ${DD_API_KEY}
       DD_SITE: ${DD_SITE:-datadoghq.com}

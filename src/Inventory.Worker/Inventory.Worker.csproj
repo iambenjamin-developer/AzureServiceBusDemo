@@ -19,5 +19,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Shared.Messaging\Shared.Messaging.csproj" />
     <ProjectReference Include="..\Shared.Contracts\Shared.Contracts.csproj" />
+    <ProjectReference Include="..\Shared.Observability\Shared.Observability.csproj" />
   </ItemGroup>
 </Project>

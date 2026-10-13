@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# Secretos locales de docker compose (API key de Datadog). Ver .env.example
+.env
+
 # User-specific files
 *.rsuser
 *.suo

@@ -41,6 +41,43 @@ services:
       timeout: 5s
       retries: 10
 
+  # Datadog Agent: recibe trazas, métricas y logs y los envía a Datadog.
+  # Necesita DD_API_KEY en el archivo .env (copiar de .env.example).
+  datadog-agent:
+    image: registry.datadoghq.com/agent:7
+    container_name: dd-agent
+    environment:
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_ENV: ${DD_ENV:-dev}
+      DD_HOSTNAME: ${DD_HOSTNAME:-dev-local}
+      # APM (trazas) y métricas custom desde las apps que corren en tu máquina
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      # Logs: los de los contenedores (los Postgres) + los que lleguen por OTLP
+      DD_LOGS_ENABLED: "true"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "true"
+      DD_LOGS_CONFIG_AUTO_MULTI_LINE_DETECTION: "true"  # un stack trace = un solo log
+      DD_CONTAINER_EXCLUDE_LOGS: "name:dd-agent"         # no recolectar los logs del propio Agent
+      # Receptor OpenTelemetry (OTLP): las apps .NET mandan aquí con AddOtlpExporter()
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT: 0.0.0.0:4317
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: 0.0.0.0:4318
+      DD_OTLP_CONFIG_LOGS_ENABLED: "true"
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+      - "8126:8126"     # APM nativo de Datadog
+      - "8125:8125/udp" # DogStatsD
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Recuerda hasta dónde leyó cada log: al reiniciar el Agent no los reenvía
+      - dd-agent-run:/opt/datadog-agent/run
+
 volumes:
   ordering-data:
   inventory-data:
+  dd-agent-run:

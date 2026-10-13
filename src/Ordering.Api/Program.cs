@@ -23,16 +23,17 @@ namespace Ordering.Api
             // Service Bus: cliente + publisher (Shared.Messaging)
             builder.Services.AddServiceBus(builder.Configuration);
 
-            // Azure SQL: la cadena se lee de "ConnectionStrings:OrderingDb" (user secrets en local).
+            // PostgreSQL: la cadena se lee de "ConnectionStrings:OrderingDb"
+            // (en local apunta al contenedor de docker-compose.yml, ver appsettings.Development.json).
             var orderingDb = builder.Configuration.GetConnectionString("OrderingDb");
             if (string.IsNullOrWhiteSpace(orderingDb))
             {
                 throw new InvalidOperationException(
-                    "Falta 'ConnectionStrings:OrderingDb'. Configúrala con: dotnet user-secrets set \"ConnectionStrings:OrderingDb\" \"<cadena>\"");
+                    "Falta 'ConnectionStrings:OrderingDb'. Configúrala en appsettings.Development.json o con: dotnet user-secrets set \"ConnectionStrings:OrderingDb\" \"<cadena>\"");
             }
-            // EnableRetryOnFailure reintenta errores transitorios de Azure SQL (p. ej. base serverless que se está "despertando").
+            // EnableRetryOnFailure reintenta errores transitorios (p. ej. el contenedor de Postgres todavía arrancando).
             builder.Services.AddDbContext<OrderingDbContext>(options =>
-                options.UseSqlServer(orderingDb, sql => sql.EnableRetryOnFailure()));
+                options.UseNpgsql(orderingDb, npgsql => npgsql.EnableRetryOnFailure()));
 
             // Consumer de "inventory-events" corriendo en segundo plano dentro de la misma API
             builder.Services.AddHostedService<InventoryEventsConsumer>();

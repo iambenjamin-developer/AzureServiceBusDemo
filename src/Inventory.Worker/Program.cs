@@ -12,16 +12,17 @@ namespace Inventory.Worker
 
             builder.Services.AddServiceBus(builder.Configuration);
 
-            // Azure SQL: la cadena se lee de "ConnectionStrings:InventoryDb" (user secrets en local).
+            // PostgreSQL: la cadena se lee de "ConnectionStrings:InventoryDb"
+            // (en local apunta al contenedor de docker-compose.yml, ver appsettings.Development.json).
             var inventoryDb = builder.Configuration.GetConnectionString("InventoryDb");
             if (string.IsNullOrWhiteSpace(inventoryDb))
             {
                 throw new InvalidOperationException(
-                    "Falta 'ConnectionStrings:InventoryDb'. Configúrala con: dotnet user-secrets set \"ConnectionStrings:InventoryDb\" \"<cadena>\"");
+                    "Falta 'ConnectionStrings:InventoryDb'. Configúrala en appsettings.Development.json o con: dotnet user-secrets set \"ConnectionStrings:InventoryDb\" \"<cadena>\"");
             }
-            // EnableRetryOnFailure reintenta errores transitorios de Azure SQL (p. ej. base serverless que se está "despertando").
+            // EnableRetryOnFailure reintenta errores transitorios (p. ej. el contenedor de Postgres todavía arrancando).
             builder.Services.AddDbContext<InventoryDbContext>(options =>
-                options.UseSqlServer(inventoryDb, sql => sql.EnableRetryOnFailure()));
+                options.UseNpgsql(inventoryDb, npgsql => npgsql.EnableRetryOnFailure()));
 
             builder.Services.AddScoped<StockService>();
             builder.Services.AddHostedService<OrderEventsConsumer>();

@@ -1,0 +1,46 @@
+# Bases de datos locales (PostgreSQL), una por servicio:
+#   ordering-db  → OrderingDb  (Ordering.Api)       localhost:5432
+#   inventory-db → InventoryDb (Inventory.Worker)   localhost:5433
+#
+# Arrancar:  docker compose up -d
+# Parar:     docker compose down        (los datos se conservan en los volúmenes)
+# Borrar:    docker compose down -v     (elimina también los datos)
+
+services:
+  ordering-db:
+    image: postgres:16-alpine
+    container_name: ordering-db
+    environment:
+      POSTGRES_DB: OrderingDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ordering-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d OrderingDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: inventory-db
+    environment:
+      POSTGRES_DB: InventoryDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - inventory-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d InventoryDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ordering-data:
+  inventory-data:

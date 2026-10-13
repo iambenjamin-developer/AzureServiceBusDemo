@@ -35,8 +35,8 @@ solo los que le interesan gracias a su **filtro** sobre la propiedad `Subject` d
 | --- | --- |
 | `Shared.Contracts` | Eventos (records) y nombres de topics, subscriptions y subjects. |
 | `Shared.Messaging` | `AddServiceBus()` registra un `ServiceBusClient` singleton y un `IEventPublisher`. |
-| `Ordering.Api` | `OrdersController` (publica `OrderPlaced`) + `InventoryEventsConsumer` (escucha `inventory-events`). Pedidos en Azure SQL (`OrderingDb`). |
-| `Inventory.Worker` | `OrderEventsConsumer` + `StockService`: reserva stock en Azure SQL (`InventoryDb`). Datos iniciales: producto 1 = 10, 2 = 5, 3 = 0. |
+| `Ordering.Api` | `OrdersController` (publica `OrderPlaced`) + `InventoryEventsConsumer` (escucha `inventory-events`). Pedidos en PostgreSQL (`OrderingDb`). |
+| `Inventory.Worker` | `OrderEventsConsumer` + `StockService`: reserva stock en PostgreSQL (`InventoryDb`). Datos iniciales: producto 1 = 10, 2 = 5, 3 = 0. |
 | `Notifications.Worker` | `OrderEventsConsumer`: escribe en el log el "email" al cliente. Sin base de datos. |
 
 Cada servicio tiene **su propia base de datos** (Ordering no lee la tabla de stock ni Inventory la de pedidos):
@@ -107,49 +107,59 @@ az servicebus topic subscription rule create -g $RG --namespace-name $NS --topic
 > Sin estos filtros, `notifications` recibiría también los `OrderPlaced`: el código los mandaría a la dead-letter queue
 > como "UnexpectedSubject". Es una buena forma de ver qué pasa si te olvidas de un filtro.
 
-### Bases de datos
+### Bases de datos (PostgreSQL en contenedores locales)
 
-En tu servidor Azure SQL crea (desde el portal) dos bases vacías: `OrderingDb` e `InventoryDb`.
-Créalas tú eligiendo el tier: si dejas que EF las cree, Azure usa un tier por defecto que puede ser caro.
-En el servidor, en *Networking*, agrega tu IP al firewall.
+Las bases no están en Azure: corren en Docker con [docker-compose.yml](docker-compose.yml),
+**un contenedor por servicio** (cada servicio es dueño de su base).
+
+| Contenedor | Base | Puerto local | Usuario / password |
+| --- | --- | --- | --- |
+| `ordering-db` | `OrderingDb` | 5432 | `postgres` / `postgres` |
+| `inventory-db` | `InventoryDb` | 5433 | `postgres` / `postgres` |
+
+```bash
+docker compose up -d --wait   # arranca los dos Postgres y espera a que estén listos
+docker compose down           # los para (los datos quedan en los volúmenes)
+docker compose down -v        # los para y borra los datos
+```
 
 ## 2. Configurar las cadenas de conexión
+
+**Service Bus** (es un secreto real): se guarda en *user secrets*, no en `appsettings.json`, que se sube a git.
+En Visual Studio: clic derecho en el proyecto → **Manage User Secrets**.
 
 ```bash
 az servicebus namespace authorization-rule keys list -g $RG --namespace-name $NS -n RootManageSharedAccessKey --query primaryConnectionString -o tsv
 ```
 
-Se guardan en *user secrets* (no en `appsettings.json`, que se sube a git).
-En Visual Studio: clic derecho en el proyecto → **Manage User Secrets**.
-
-| Proyecto | `ServiceBus` | `OrderingDb` | `InventoryDb` |
-| --- | --- | --- | --- |
-| Ordering.Api | ✔ | ✔ | |
-| Inventory.Worker | ✔ | | ✔ |
-| Notifications.Worker | ✔ | | |
-
 ```bash
-dotnet user-secrets set "ConnectionStrings:ServiceBus"  "<cadena-service-bus>" --project src/Ordering.Api
-dotnet user-secrets set "ConnectionStrings:OrderingDb"  "<cadena-sql-orderingdb>" --project src/Ordering.Api
-
-dotnet user-secrets set "ConnectionStrings:ServiceBus"  "<cadena-service-bus>" --project src/Inventory.Worker
-dotnet user-secrets set "ConnectionStrings:InventoryDb" "<cadena-sql-inventorydb>" --project src/Inventory.Worker
-
-dotnet user-secrets set "ConnectionStrings:ServiceBus"  "<cadena-service-bus>" --project src/Notifications.Worker
+dotnet user-secrets set "ConnectionStrings:ServiceBus" "<cadena-service-bus>" --project src/Ordering.Api
+dotnet user-secrets set "ConnectionStrings:ServiceBus" "<cadena-service-bus>" --project src/Inventory.Worker
+dotnet user-secrets set "ConnectionStrings:ServiceBus" "<cadena-service-bus>" --project src/Notifications.Worker
 ```
 
-Formato de la cadena de Azure SQL (la copias del portal: base de datos → *Connection strings* → ADO.NET):
+**PostgreSQL**: las cadenas de los contenedores locales ya están en `appsettings.Development.json`
+(no son secretas, solo sirven para Docker en tu máquina):
 
-```
-Server=tcp:<servidor>.database.windows.net,1433;Initial Catalog=<base>;User ID=<usuario>;Password=<password>;Encrypt=True;TrustServerCertificate=False;
-```
+| Proyecto | Clave | Cadena |
+| --- | --- | --- |
+| Ordering.Api | `ConnectionStrings:OrderingDb` | `Host=localhost;Port=5432;Database=OrderingDb;Username=postgres;Password=postgres` |
+| Inventory.Worker | `ConnectionStrings:InventoryDb` | `Host=localhost;Port=5433;Database=InventoryDb;Username=postgres;Password=postgres` |
 
-En producción (App Service) las mismas claves van en *Environment variables → Connection strings*.
+> Los *user secrets* tienen prioridad sobre `appsettings.Development.json`. Si antes guardaste ahí
+> `OrderingDb` / `InventoryDb` (cadenas de Azure SQL), bórralas o Npgsql no podrá leerlas:
+>
+> ```bash
+> dotnet user-secrets remove "ConnectionStrings:OrderingDb" --project src/Ordering.Api
+> dotnet user-secrets remove "ConnectionStrings:InventoryDb" --project src/Inventory.Worker
+> ```
+
+En producción las mismas claves van como variables de entorno / *Connection strings* del App Service.
 
 ## 3. Crear las tablas (migraciones de EF Core)
 
-Las migraciones ya están en `src/*/Data/Migrations`. Para aplicarlas a Azure SQL
-(usa los user secrets del proyecto para conectarse):
+Las migraciones ya están en `src/*/Data/Migrations`. Con los contenedores levantados, aplícalas
+(usan la cadena de `appsettings.Development.json`):
 
 ```bash
 dotnet tool restore
@@ -158,11 +168,13 @@ dotnet ef database update --project src/Inventory.Worker
 ```
 
 Esto crea `Orders` + `OrderLines` en OrderingDb y `Products` (con 3 productos) en InventoryDb.
+Para mirar los datos: `docker exec -it inventory-db psql -U postgres -d InventoryDb -c 'select * from "Products"'`
+(o conecta pgAdmin / DBeaver / Azure Data Studio a `localhost:5432` y `localhost:5433`).
 Si cambias una entidad: `dotnet ef migrations add <Nombre> --project <proyecto> -o Data/Migrations` y otra vez `database update`.
 
 ## 4. Ejecutar
 
-Arranca `Ordering.Api`, `Inventory.Worker` y `Notifications.Worker` (en Visual Studio: *Multiple startup projects*)
+Con `docker compose up -d` corriendo, arranca `Ordering.Api`, `Inventory.Worker` y `Notifications.Worker` (en Visual Studio: *Multiple startup projects*)
 y usa [Ordering.Api.http](src/Ordering.Api/Ordering.Api.http) o Swagger (`http://localhost:5180/swagger`):
 
 1. `POST /api/orders` con productos 1 y 2 → responde `202 Accepted` con estado `Pending`.
@@ -180,4 +192,4 @@ activos y los de la dead-letter queue.
 - **Outbox**: aquí se guarda en la base y luego se publica (son dos operaciones separadas); si la publicación falla,
   el pedido queda `Pending`.
 - **Concurrencia de stock**: con una sola instancia de Inventory y `MaxConcurrentCalls = 1` no hay conflictos.
-  Con varias instancias haría falta un control de concurrencia (p. ej. `rowversion`).
+  Con varias instancias haría falta un control de concurrencia (p. ej. la columna de sistema `xmin` de Postgres como *concurrency token*).
